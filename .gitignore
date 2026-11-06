@@ -1,0 +1,6 @@
+data/
+cache/
+third_party/
+.venv/
+__pycache__/
+*.npz
