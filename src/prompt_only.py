@@ -1,8 +1,12 @@
 import numpy as np
 import pandas as pd
 
-from load import ACTS, load_acts, load_table
+from load import ROOT,ACTS, load_acts, load_table
 from myprobe import fit_direction, agent_scores
+
+import sys, warnings
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.metrics import roc_auc_score
 
 def sysonly_vectors(table,acts,layer):
     """One vector per agent: its system-prompt-only row. No averaging: each agent has exactly 1 row"""
@@ -50,10 +54,7 @@ def prompt_only_scores(dmeta,dacts,stable,sacts,layers,seeds):
 
 
 if __name__ == "__main__":
-    import sys, warnings
-    from sklearn.exceptions import ConvergenceWarning
-    from sklearn.metrics import roc_auc_score
-    from load import ROOT
+
     warnings.filterwarnings("ignore", category=ConvergenceWarning)
     warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 
@@ -63,12 +64,12 @@ if __name__ == "__main__":
 
     dmeta, dacts = load_acts(ACTS / "core_reextract")
     stable, sacts = load_table(ACTS / "sysonly")
-    stable = stable[stable.set == "core"]          # Core only for now; Transfer comes with H2
+    stable = stable[stable.set == "core"]
 
     df = prompt_only_scores(dmeta, dacts, stable, sacts, LAYERS, SEEDS)
     print(len(df), "rows, expect", 400 * len(LAYERS) * len(SEEDS))
 
-    ag = df.groupby(["run_id", "agent", "role", "cell", "layer"]).score_z.mean().reset_index()  # mean over seeds
+    ag = df.groupby(["run_id", "agent", "role", "cell", "layer"]).score_z.mean().reset_index()
     for layer, g in ag.groupby("layer"):
         col = g[g.role == "colluder"].score_z
         hon = g[(g.role == "honest") & (g.cell == "control")].score_z

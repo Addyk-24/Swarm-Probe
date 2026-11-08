@@ -5,6 +5,8 @@ from load import ROOT, ACTS, load_acts, load_table, domain_of
 from myprobe import fit_direction, agent_scores
 from prompt_only import sysonly_vectors
 
+import sys, warnings
+from sklearn.exceptions import ConvergenceWarning
 
 ORDER = {
     "surgery":  ["honest", "honest+filler", "identity", "honest+motive", "honest+tactics",
@@ -57,8 +59,7 @@ def summarise(df,order):
 
 
 if __name__ == "__main__":
-    import sys, warnings
-    from sklearn.exceptions import ConvergenceWarning
+
     warnings.filterwarnings("ignore", category=ConvergenceWarning)
     warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
     FULL = "--full" in sys.argv

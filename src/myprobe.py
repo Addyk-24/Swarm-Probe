@@ -3,9 +3,13 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
+import warnings
+from sklearn.exceptions import ConvergenceWarning
 
+from reproduce_LR import held_out_cv_layer,compute_scores,train_deception_probe,build_groups
 
-from load import domain_of
+from load import domain_of,ROOT, ACTS, load_acts
+import sys
 
 def agent_vectors(meta, acts,layer):
 
@@ -101,15 +105,13 @@ def heldout_auroc(meta, acts, layer, seed=0):
     return out
 
 if __name__ == "__main__":
-    import sys
-    from load import ROOT, ACTS, load_acts
+
     sys.path.insert(0, str(ROOT / "third_party" / "narcbench" / "reproduce"))
-    from reproduce_LR import build_groups
 
     meta, acts = load_acts(ACTS / "core_reextract")
     mine = agent_vectors(meta, acts, 28)
-    print(len(mine), "agents")                                   # expect 400
-    print(mine[(meta[0]["run_id"], "Imani Okafor")][:3])         # expect about [-1.10 -2.16 -0.58]
+    print(len(mine), "agents")
+    print(mine[(meta[0]["run_id"], "Imani Okafor")][:3])
 
     theirs = build_groups(meta, acts, 28)
     ok = all(np.allclose(mine[(rid, name)], vec)
@@ -117,46 +119,35 @@ if __name__ == "__main__":
     print("matches build_groups:", ok)
 
 
-    # ---- Function 2 test: my arrow vs their arrow ----
-    import warnings
-    from sklearn.exceptions import ConvergenceWarning
-    from reproduce_LR import train_deception_probe
+
     warnings.filterwarnings("ignore", category=ConvergenceWarning)          # max_iter=8 on purpose
     warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 
     for domain, seed in [("cyber", 0), ("med", 1), ("fin", 2), (None, 0)]:
         my_scaler, my_w = fit_direction(meta, acts, 28, exclude_domain=domain, seed=seed)
         their_scaler, their_w = train_deception_probe(meta, acts, 28, exclude_domain=domain, seed=seed)
-        dot = abs(my_w @ their_w)                    # both length 1, so 1.0 = same arrow
+        dot = abs(my_w @ their_w)
         same_scaler = np.allclose(my_scaler.mean_, their_scaler.mean_)
         print(f"exclude {str(domain):5s} seed {seed}  w dot {dot:.4f}  same scaler {same_scaler}")
-        # expect: w dot 1.0000, same scaler True on every line
 
-    # ---- Function 3 test: my run scores vs their compute_scores ----
-    # Use THEIR scaler and arrow for both, so only Function 3 is being tested.
-    from reproduce_LR import compute_scores
     scaler, w = fit_direction(meta, acts, 28, exclude_domain="cyber", seed=0)
-    my_scores = agent_scores(mine, scaler, w)              # {(run_id, agent_name): score}
-    print(len(my_scores), "agent scores")                  # expect 400
+    my_scores = agent_scores(mine, scaler, w) # {(run_id, agent_name): score}
+    print(len(my_scores), "agent scores")
 
-    rids = sorted(rid for rid, g in theirs.items() if g["domain"] == "cyber")   # the held-out runs
+    rids = sorted(rid for rid, g in theirs.items() if g["domain"] == "cyber")
     their = compute_scores(theirs, rids, scaler, w)
     peak_ok, split_ok = True, True
     for k, rid in enumerate(rids):
-        run = sorted((s for (r, _), s in my_scores.items() if r == rid), reverse=True)  # 4 scores, high -> low
-        peak_ok &= np.isclose(run[0], their["peak_suspicion"][k])                          # max
+        run = sorted((s for (r, _), s in my_scores.items() if r == rid), reverse=True)
+        peak_ok &= np.isclose(run[0], their["peak_suspicion"][k])
         split_ok &= np.isclose(np.mean(run[:2]) - np.mean(run[2:]), their["deception_split"][k])  # top-2 - bottom-2
-    print(f"{len(rids)} cyber runs  peak matches {peak_ok}  split matches {split_ok}")  # expect True True
+    print(f"{len(rids)} cyber runs  peak matches {peak_ok}  split matches {split_ok}")
 
-    # ---- Final check: my leave-one-domain-out AUROC vs their held_out_cv_layer ----
-    from reproduce_LR import held_out_cv_layer
     for layer in [26, 28, 30]:
         folds = heldout_auroc(meta, acts, layer, seed=0)     # {domain: AUROC}
         mine_auc = np.mean(list(folds.values()))
         their_auc = held_out_cv_layer(meta, acts, layer, 0)["peak_suspicion"]
         print(f"layer {layer}  {len(folds)} folds  mine {mine_auc:.3f}  theirs {their_auc:.3f}")
-        # expect: 17 folds, mine == theirs (1.000) on every line
-
 
 
      
