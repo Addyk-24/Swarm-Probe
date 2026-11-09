@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 
 from load import ROOT, ACTS, load_table, domain_of
-from myprobe import agent_vectors, fit_direction, agent_scores
+from myprobe import agent_vectors, fit_direction, agent_scores, heldout_auroc
+
+import sys
+import warnings
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.metrics import roc_auc_score
 
 def heldout_scores(meta, acts, layers, seeds,hide_runs=()):
     mode = {r["run_id"]: r["mode"] for r in meta}
@@ -41,17 +46,10 @@ def heldout_scores(meta, acts, layers, seeds,hide_runs=()):
 
 
 if __name__ == "__main__":
-    import sys
-    import warnings
-    from sklearn.exceptions import ConvergenceWarning
-    from sklearn.metrics import roc_auc_score
-    from myprobe import heldout_auroc
-    warnings.filterwarnings("ignore", category=ConvergenceWarning)          # max_iter=8 on purpose
+
+    warnings.filterwarnings("ignore", category=ConvergenceWarning)
     warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
 
-    # python scores.py [--full] [--strict]
-    #   --full   all 5 layers x 10 seeds and save the CSV (~10 min); without it: layer 28, seed 0 only (~12 s)
-    #   --strict train the arrow without any told_didnt runs (Step 3b)
     FULL = "--full" in sys.argv
     STRICT = "--strict" in sys.argv
     LAYERS = [26, 27, 28, 29, 30] if FULL else [28]
@@ -65,22 +63,19 @@ if __name__ == "__main__":
     cells = table.drop_duplicates("run_id")[["run_id", "cell"]]
     df = df.merge(cells, on="run_id", validate="many_to_one")
 
-    # ---- Check 1: one row per agent per layer per seed ----
     print(len(df), "rows, expect", 400 * len(LAYERS) * len(SEEDS))
     print(df.groupby("role").score_z.mean().round(2).to_dict(), "(colluders >> honest)")
 
     one = df[(df.layer == 28) & (df.seed == 0)]
 
-    # ---- Check 2 (normal mode only): rebuild per-fold AUROC from the table; must equal heldout_auroc ----
     if not STRICT:
         run = one.groupby(["run_id", "domain", "cell"]).score.max().reset_index()   # run score = max agent
         run["y"] = (run.cell != "control").astype(int)
         from_table = {d: roc_auc_score(g.y, g.score) for d, g in run.groupby("domain")}
         from_func = heldout_auroc(meta, acts, 28, seed=0)
         print("per-fold AUROC matches heldout_auroc:",
-              all(np.isclose(from_table[d], from_func[d]) for d in from_func))      # expect True
+              all(np.isclose(from_table[d], from_func[d]) for d in from_func))
 
-    # ---- Check 3: score_z puts held-out control runs near 0 ----
     run_z = one.groupby(["run_id", "cell"]).score_z.max().reset_index()
     print(run_z.groupby("cell").score_z.agg(["mean", "count"]).round(2))
 
